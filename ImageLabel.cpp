@@ -7,7 +7,8 @@ ImageLabel::ImageLabel(QWidget *parent)
 	: QLabel(parent),
 	isSelectIn(false),
 	isSelectCorner(-1),
-	isSelectSide(-1)
+	isSelectSide(-1),
+	isLBtnDown(false)
 {
 	setMouseTracking(true);
 	myRect.setRect(50, 10, 200, 200);
@@ -24,18 +25,21 @@ void ImageLabel::paintEvent(QPaintEvent * event)
 
 	QPainter painter(this);
 
-	painter.setPen(QPen(Qt::red));
+	painter.setPen(QPen(Qt::red,2));
 	painter.drawRect(myRect);
 }
 
 void ImageLabel::mousePressEvent(QMouseEvent * event)
 {
+	qDebug() << "1.pressEvent";
 	if (event->button() == Qt::LeftButton)
 	{
 		isLBtnDown = true;
 		pressPoint = event->pos();
 
+		//假如选中myrect
 		recordRect.setRect(myRect.x(), myRect.y(), myRect.width(), myRect.height());
+		pathfinderRect.setRect(myRect.x(), myRect.y(), myRect.width(), myRect.height());
 
 		if (isInMyRect(pressPoint))
 		{
@@ -56,12 +60,7 @@ void ImageLabel::mousePressEvent(QMouseEvent * event)
 		}
 		else
 		{
-			//空白区域
-			//recordRect.setX(event->pos().x());
-			//recordRect.setY(event->pos().y());
-
-			//recordRect.setRect(event->pos().x(), event->pos().y(), 0, 0);
-			//qDebug() << recordRect.height();
+			
 		}
 	}
 
@@ -70,39 +69,40 @@ void ImageLabel::mousePressEvent(QMouseEvent * event)
 
 void ImageLabel::mouseMoveEvent(QMouseEvent * event)
 {
-
+	//qDebug() << "2.moveEvent";
 	if (isLBtnDown)
 	{
-		//Boundary detection
-		//cursor cannot leave the label when isLBtnDown
-		QSize lableSize = size();
-		//QPoint position = mapFromGlobal(QCursor::pos()); //bug：QPoint movePoint = event->pos()可能为负
-		QPoint position = event->pos();
+		qDebug() << "move event and isLbtnDown";
 
-		qint32 x = qBound(0, position.x(), lableSize.width());
-		qint32 y = qBound(0, position.y(), lableSize.height());
+		////Boundary detection
+		////cursor cannot leave the label when isLBtnDown
+		//QSize lableSize = size();
+		////QPoint position = mapFromGlobal(QCursor::pos()); //bug：QPoint movePoint = event->pos()可能为负
+		//QPoint position = event->pos();
 
-		// Adjust the cursor
-		if (x != position.x() || y != position.y())
-		{
-			qDebug() << "the cursor leave the lable:";
-			qDebug() << position.x()<< position.y();
+		//qint32 x = qBound(0, position.x(), lableSize.width());
+		//qint32 y = qBound(0, position.y(), lableSize.height());
+
+		//// Adjust the cursor
+		//if (x != position.x() || y != position.y())
+		//{
+		//	qDebug() << "the cursor leave the lable:";
+		//	qDebug() << position.x()<< position.y();
 
 
-			QCursor::setPos(mapToGlobal(QPoint(x, y)));
-			qDebug() << "adjust the cursor:";
+		//	QCursor::setPos(mapToGlobal(QPoint(x, y)));
+		//	qDebug() << "adjust the cursor:";
 
-			QPoint position2 = mapFromGlobal(QCursor::pos());
-			qDebug() << position2.x() << position2.y();
-			
-			event->accept();
-			QLabel::mouseMoveEvent(event);
-			return;
-		}
+		//	QPoint position2 = mapFromGlobal(QCursor::pos());
+		//	qDebug() << position2.x() << position2.y();
+		//	
+		//	event->accept();
+		//	QLabel::mouseMoveEvent(event);
+		//	return;
+		//}
 
-		//按道理movePoint不应该为负了啊，上面已经处理
 		QPoint movePoint = event->pos();
-		qDebug() << "movePoint:";
+		qDebug() << "2.1:movePoint:";
 		qDebug() << movePoint.x() << movePoint.y();
 
 		int moveW = movePoint.x() - pressPoint.x();
@@ -115,62 +115,83 @@ void ImageLabel::mouseMoveEvent(QMouseEvent * event)
 			int moveX = recordRect.x() + moveW;
 			int moveY = recordRect.y() + moveH;
 
-			//qDebug() << "press and move";
-			//myRect.setRect(moveX, moveY, myRect.width(), myRect.height());
-			myRect.moveTopLeft(QPoint(moveX, moveY));
-			qDebug() << "moveTopLeft:";
-			qDebug() << myRect.x() << myRect.y();
 
+			//1.我们先移动探路先锋，允许其出界 2.如果出界将其移回/重构 -> myRect 3.绘制...
 
-			if (myRect.width() < 0 || myRect.height()<0 || myRect.x()<0 ||myRect.y()<0)
+			//pathfinderRect.moveTopLeft(QPoint(moveX, moveY));
+			pathfinderRect.setRect(moveX,moveY,recordRect.width(),recordRect.height());
+			qDebug() << "pathfinderRect:";
+			qDebug() << pathfinderRect.x() << pathfinderRect.y();
+
+			if (rectInLabel(pathfinderRect))
 			{
-				correctRect(myRect);
-				recordRect.setRect(myRect.x(), myRect.y(), myRect.width(), myRect.height());
-				pressPoint = event->pos();
-				qDebug() << "change perssPoint:";
-				qDebug() << pressPoint.x() << pressPoint.y();
+				myRect = pathfinderRect;
+			}
+			else
+			{
+				myRect = movebackRect(pathfinderRect);
+
+				if (pointInLabel(event->pos()))
+				{
+					recordRect.setRect(myRect.x(), myRect.y(), myRect.width(), myRect.height());
+					pressPoint = event->pos();
+					qDebug() << "======================================change perssPoint:";
+					qDebug() << pressPoint.x() << pressPoint.y();
+				}
 			}
 		}
 		else if (isSelectCorner > 0)
 		{
 			int corner = isSelectCorner;
 			moveCorner(corner, moveW, moveH);
-
-			if (myRect.width() < 0 || myRect.height() < 0 || myRect.x() < 0 || myRect.y() < 0)
+			if(rectInLabel(pathfinderRect))
 			{
-				correctRect(myRect);
-				//recordRect.setRect(myRect.x(), myRect.y(), myRect.width(), myRect.height());
-				//pressPoint = event->pos();
-				qDebug() << "corner change perssPoint:";
-				qDebug() << pressPoint.x() << pressPoint.y();
+				myRect = pathfinderRect.normalized();
 			}
-
+			else
+			{
+				myRect = correctRect(pathfinderRect);
+			}
+			
 		}
 		else if (isSelectSide > 0)
 		{
 			int side = isSelectSide;
 			moveSide(side, moveW, moveH);
-
-			if (myRect.width() < 0 || myRect.height() < 0 || myRect.x() < 0 || myRect.y() < 0)
+			if (rectInLabel(pathfinderRect))
 			{
-				correctRect(myRect);
-				//recordRect.setRect(myRect.x(), myRect.y(), myRect.width(), myRect.height());
-				//pressPoint = event->pos();
-				qDebug() << "side change perssPoint:";
-				qDebug() << pressPoint.x() << pressPoint.y();
+				myRect = pathfinderRect.normalized();
+			}
+			else
+			{
+				myRect = correctRect(pathfinderRect);
 			}
 		}
 		else
 		{
 			//select black
-			
+			int w = movePoint.x() - pressPoint.x();
+			int h = movePoint.y() - pressPoint.y();
 
+			pathfinderRect.setRect(pressPoint.x(), pressPoint.y(),w,h);
+			if (!pathfinderRect.isNull())
+			{
+				if (rectInLabel(pathfinderRect))
+				{
+					myRect = pathfinderRect.normalized();
+				}
+				else
+				{
+					myRect = correctRect(pathfinderRect);
+				}
+			}
 		}
 
 		update();
 	}
 	else
 	{
+	qDebug() << "=====mouseEvent and not down";
 		if (isInMyRect(event->pos()))
 		{
 			setCursor(Qt::SizeAllCursor);
@@ -199,13 +220,13 @@ void ImageLabel::mouseMoveEvent(QMouseEvent * event)
 
 void ImageLabel::mouseReleaseEvent(QMouseEvent * event)
 {
+	qDebug() << "3.release";
 	if (event->button() == Qt::LeftButton)
 	{
-		if (!myRect.isValid() || myRect.x()<0 || myRect.y()<0)
-		{
-			correctRect(myRect);
-		}
-		update();
+		
+		myRect = myRect.normalized();
+
+		//update();
 
 		isLBtnDown = false;
 		isSelectIn = false;
@@ -219,43 +240,6 @@ void ImageLabel::mouseReleaseEvent(QMouseEvent * event)
 	QWidget::mouseReleaseEvent(event);
 }
 
-void ImageLabel::leaveEvent(QEvent * event)
-{
-	qDebug() << "leaveEvent";
-	if (isLBtnDown)
-	{
-		qDebug() << "isbtndown leaveEvent";
-
-		// Get the window geometry & cursor position
-
-		QSize lableSize = size();
-		QPoint position = mapFromGlobal(QCursor::pos());
-
-		qint32 x = qBound(0, position.x(), lableSize.width());
-		qint32 y = qBound(0, position.y(), lableSize.height());
-
-		// Adjust the cursor
-		if (x != position.x() || y != position.y())
-			QCursor::setPos(mapToGlobal(QPoint(x, y)));
-		event->accept();
-	}
-	QLabel::leaveEvent(event);
-
-	//// Get the window geometry & cursor position
-	//const QRect & rect = geometry();
-	//QPoint position = QCursor::pos();
-
-	//// Check the bounds
-	//qint32 x = qBound(rect.left(), position.x(), rect.right());
-	//qint32 y = qBound(rect.top(), position.y(), rect.bottom());
-
-	//// Adjust the cursor
-	//if (x != position.x() || y != position.y())
-	//	QCursor::setPos(x, y);
-
-	//event->accept();
-	//QMainWindow::leaveEvent(event);
-}
 
 
 bool ImageLabel::isInMyRect(QPoint point)
@@ -321,20 +305,20 @@ void ImageLabel::moveCorner(int corner, int moveW, int moveH)
 	switch (corner)
 	{
 	case 1:
-		myRect.setTopLeft(QPoint(recordRect.x() + moveW, recordRect.y() + moveH));
+		pathfinderRect.setTopLeft(QPoint(recordRect.x() + moveW, recordRect.y() + moveH));
 		break;
 	case 2:
-		myRect.setTopRight(QPoint(
+		pathfinderRect.setTopRight(QPoint(
 			recordRect.x() + moveW + recordRect.width(),
 			recordRect.y() + moveH));
 		break;
 	case 3:
-		myRect.setBottomRight(QPoint(
+		pathfinderRect.setBottomRight(QPoint(
 			recordRect.x() + moveW + recordRect.width(),
 			recordRect.y() + moveH + recordRect.height()));
 		break;
 	case 4:
-		myRect.setBottomLeft(QPoint(
+		pathfinderRect.setBottomLeft(QPoint(
 			recordRect.x() + moveW,
 			recordRect.y() + moveH + recordRect.height()));
 		break;
@@ -348,51 +332,89 @@ void ImageLabel::moveSide(int side, int moveW, int moveH)
 	switch (side)
 	{
 	case 1:
-		myRect.setTop(recordRect.top() + moveH);
+		pathfinderRect.setTop(recordRect.top() + moveH);
 		break;
 	case 2:
-		myRect.setRight(recordRect.right() + moveW);
+		pathfinderRect.setRight(recordRect.right() + moveW);
 		break;
 	case 3:
-		myRect.setBottom(recordRect.bottom() + moveH);
+		pathfinderRect.setBottom(recordRect.bottom() + moveH);
 		break;
 	case 4:
-		myRect.setLeft(recordRect.left() + moveW);
+		pathfinderRect.setLeft(recordRect.left() + moveW);
 		break;
 	default:
 		break;
 	}
 }
 
-void ImageLabel::correctRect(QRect & rect)
+QRect ImageLabel::correctRect(const QRect & rect) const
 {
+	//We recommend that you use x() + width() and y() + height() 
+	//to find the true bottom-right corner, and avoid right() and bottom().
 	qDebug() << "correct";
 	qDebug() << rect.x() << rect.y() << rect.width() << rect.height();
 
-	myRect.normalized();
+	QRect resultRect = rect.normalized();
 
-	if (rect.width() < 0)
+	if (resultRect.x() < 0)
 	{
-		int tempW = rect.width();
-		rect.setX(rect.x() + rect.width());
-		rect.setWidth(-tempW);
+		resultRect.setLeft(0);
 	}
-	if (rect.height() < 0)
+	if (resultRect.y() < 0)
 	{
-		int tempH = rect.height();
-		rect.setY(rect.y() + rect.height());
-		rect.setHeight(-tempH);
+		resultRect.setTop(0);
+	}
+	if (resultRect.x() + resultRect.width() > size().width())
+	{
+		resultRect.setRight(size().width()-1);
+	}
+	if (resultRect.y() + resultRect.height() > size().height())
+	{
+		resultRect.setBottom(size().height()-1);
 	}
 
-	if (rect.x() < 0)
-	{
-		rect.moveLeft(0);
-	}
+	return resultRect;
+	
 
-	if (rect.y() < 0)
-	{
-		rect.moveTop(0);
-	}
 	qDebug() << "correct after:";
 	qDebug() << rect.x() << rect.y() << rect.width() << rect.height();
+}
+
+bool ImageLabel::pointInLabel(const QPoint & point)
+{
+	QRect labelRect(0, 0, size().width(), size().height());
+	return labelRect.contains(point,false);
+}
+
+bool ImageLabel::rectInLabel(const QRect & rect)
+{
+	QRect labelRect(0, 0, size().width(), size().height());
+	return labelRect.contains(rect, false);
+}
+
+QRect ImageLabel::movebackRect(const QRect & rect) const
+{
+	QRect resultRect = rect.normalized();
+
+	if (resultRect.x() < 0)
+	{
+		resultRect.translate(0 - resultRect.x(),0);
+	}
+	if (resultRect.y() < 0)
+	{
+		resultRect.translate(0, 0 - resultRect.y());
+
+	}
+	if (resultRect.x()+resultRect.width() > size().width())
+	{
+		resultRect.translate(size().width() - (resultRect.x() + resultRect.width()), 0);
+	}
+	if (resultRect.y()+resultRect.height() > size().height())
+	{
+		resultRect.translate(0, size().height() - (resultRect.y() + resultRect.height()));
+
+	}
+	
+	return resultRect;
 }

@@ -17,7 +17,7 @@ protected:
 	void mousePressEvent(QMouseEvent *event) override;
 	void mouseMoveEvent(QMouseEvent *event) override;
 	void mouseReleaseEvent(QMouseEvent *event) override;
-	void leaveEvent(QEvent *event) override;
+	//void leaveEvent(QEvent *event) override;
 
 
 private:
@@ -26,12 +26,18 @@ private:
 	int atSide(QPoint point);
 
 	void moveCorner(int corner, int w, int h);
+	//QRect moveCorner(const QRect & rect,int corner, int w, int h);
 	void moveSide(int side, int w, int h);
 
-	void correctRect(QRect &rect);
+	bool pointInLabel(const QPoint &point);
+	bool rectInLabel(const QRect &rect);
 
-	QRect myRect;
-	QRect recordRect;
+	QRect movebackRect(const QRect &rect) const;
+	QRect correctRect(const QRect &rect) const;
+
+	QRect myRect;   //绘制的，真实的rect数据
+	QRect recordRect; //记录移动的rect最初的模样
+	QRect pathfinderRect;
 
 	bool isSelectIn;
 	int isSelectCorner;
